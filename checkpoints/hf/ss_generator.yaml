@@ -1,0 +1,159 @@
+# condition_embedder 和 generator两部分组成
+module:
+  condition_embedder:
+    backbone:
+      _target_: sam3d_objects.model.backbone.dit.embedder.embedder_fuser.EmbedderFuser
+      drop_modalities_weight:
+      - - - pointmap
+          - rgb_pointmap
+        - 1.0
+      dropout_prob: 0.1
+      embedder_list:
+      # Image Embedder
+      - - _target_: sam3d_objects.model.backbone.dit.embedder.dino.Dino
+          dino_model: dinov2_vitl14_reg
+          input_size: 518
+          normalize_images: true
+        - - - image
+            - cropped   # 裁剪后的图像送入 image
+          - - rgb_image
+            - full      # 原始的图像送入rgb_image
+      # Mask Embedder
+      - - _target_: sam3d_objects.model.backbone.dit.embedder.dino.Dino
+          dino_model: dinov2_vitl14_reg
+          input_size: 518
+          normalize_images: true
+        - - - mask
+            - cropped   # 裁剪后的掩码送入 mask
+          - - rgb_image_mask
+            - full      # 原始的掩码送入rgb_image——mask
+      # Pointmap Embedder
+      - - _target_: sam3d_objects.model.backbone.dit.embedder.pointmap.PointPatchEmbed
+          embed_dim: 512
+          input_size: 256
+          patch_size: 8
+          remap_output: linear
+        - - - pointmap
+            - cropped
+          - - rgb_pointmap
+            - full
+      force_drop_modalities: null
+      freeze: true
+      projection_net_hidden_dim_multiplier: 4.0 # 将不同维度的特征统一映射到同一维度
+      use_pos_embedding: learned
+  generator:
+    backbone:
+      # _target_: sam3d_objects.model.backbone.generator.shortcut.model.ShortCut
+      # _target_: sam3d_objects.model.backbone.generator.shortcut.model.ShortCut_easycache
+      _target_: sam3d_objects.model.backbone.generator.shortcut.model.ShortCut_f3c
+      # _target_: sam3d_objects.model.backbone.generator.shortcut.model.ShortCut_end
+      # _target_: sam3d_objects.model.backbone.generator.shortcut.model.ShortCut_taylorseer
+
+      # _target_: sam3d_objects.model.backbone.generator.shortcut.model.ShortCut_token
+     
+      batch_mode: true
+      cfg_modalities:
+      - shape
+      inference_steps: 2  # 推理步数
+      # 训练时的损失权重
+      loss_weights:
+        6drotation_normalized: 0.1
+        _target_: sam3d_objects.config.utils.make_dict
+        scale: 0.1
+        shape: 0
+        translation: 1.0
+        translation_scale: 0.0
+      ratio_cfg_samples_in_self_consistency_target: 0.25
+      rescale_t: 1
+      reverse_fn:
+        _target_: sam3d_objects.model.backbone.generator.classifier_free_guidance.ClassifierFreeGuidanceWithExternalUnconditionalProbability
+        backbone:
+        # 处理稀疏结构的流匹配网络
+          _target_: sam3d_objects.model.backbone.tdfy_dit.models.mot_sparse_structure_flow.SparseStructureFlowTdfyWrapper
+          cond_channels: 1024
+          condition_embedder: null
+          force_zeros_cond: true
+          freeze_d_time_embedder: true
+          freeze_shared_parameters: true
+          in_channels: 8
+          is_shortcut_model: true
+          latent_mapping:
+          # 物体的旋转姿态 6
+            6drotation_normalized:
+              _target_: sam3d_objects.model.backbone.tdfy_dit.models.mm_latent.Latent # 多模态信息的转换，统一转换成1024维度的token
+              in_channels: 6
+              model_channels: 1024
+              pos_embedder:
+                _target_: sam3d_objects.model.backbone.tdfy_dit.models.mm_latent.LearntPositionEmbedder
+                model_channels: 1024
+                token_len: 1
+            # 物体 XYZ 缩放
+            scale:
+              _target_: sam3d_objects.model.backbone.tdfy_dit.models.mm_latent.Latent
+              in_channels: 3
+              model_channels: 1024
+              pos_embedder:
+                _target_: sam3d_objects.model.backbone.tdfy_dit.models.mm_latent.LearntPositionEmbedder
+                model_channels: 1024
+                token_len: 1
+            # 物体 XYZ 位移
+            shape:
+              _target_: sam3d_objects.model.backbone.tdfy_dit.models.mm_latent.Latent
+              in_channels: 8
+              model_channels: 1024
+              pos_embedder:
+                _target_: sam3d_objects.model.backbone.tdfy_dit.models.mm_latent.ShapePositionEmbedder
+                model_channels: 1024
+                patch_size: 1
+                resolution: 16
+            # 位移缩放因子
+            translation:
+              _target_: sam3d_objects.model.backbone.tdfy_dit.models.mm_latent.Latent
+              in_channels: 3
+              model_channels: 1024
+              pos_embedder:
+                _target_: sam3d_objects.model.backbone.tdfy_dit.models.mm_latent.LearntPositionEmbedder
+                model_channels: 1024
+                token_len: 1
+            # 物体的几何形状
+            translation_scale:
+              _target_: sam3d_objects.model.backbone.tdfy_dit.models.mm_latent.Latent
+              in_channels: 1
+              model_channels: 1024
+              pos_embedder:
+                _target_: sam3d_objects.model.backbone.tdfy_dit.models.mm_latent.LearntPositionEmbedder
+                model_channels: 1024
+                token_len: 1
+          latent_share_transformer:
+            6drotation_normalized:
+            - 6drotation_normalized
+            - translation
+            - scale
+            - translation_scale
+          mlp_ratio: 4
+          model_channels: 1024
+          num_blocks: 24
+          num_heads: 16
+          out_channels: 8
+          patch_size: 1
+          pe_mode: ape
+          qk_rms_norm: true
+          resolution: 16
+          use_checkpoint: false
+          use_fp16: false
+        interval:
+        - 0
+        - 500
+        p_unconditional: 0.1
+        strength: 2.0
+        unconditional_handling: add_flag
+      self_consistency_cfg_strength: 2.0
+      self_consistency_prob: 0.25
+      shortcut_loss_weight: 1.0
+      sigma_min: 0.0
+      time_scale: 1000.0
+      training_time_sampler_fn:
+        _partial_: true
+        _target_: sam3d_objects.model.backbone.generator.flow_matching.model.lognorm_sampler
+        mean: -1.0
+        std: 1.0

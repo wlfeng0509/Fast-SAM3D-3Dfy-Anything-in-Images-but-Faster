@@ -1,0 +1,72 @@
+module:
+# condition_embedder 和 generator 组成
+  condition_embedder:
+    backbone:
+    # EmbedderFuser
+      _target_: sam3d_objects.model.backbone.dit.embedder.embedder_fuser.EmbedderFuser
+      # 特征提取器 2 个 dinov2的模型，并融合
+      embedder_list:
+      - - _target_: sam3d_objects.model.backbone.dit.embedder.dino.Dino
+          dino_model: dinov2_vitl14_reg
+          input_size: 518
+          normalize_images: true
+          prenorm_features: true
+        - - - image  
+            - cropped  # 裁切后的图像
+          - - rgb_image
+            - full  # 原始图像
+      - - _target_: sam3d_objects.model.backbone.dit.embedder.dino.Dino
+          dino_model: dinov2_vitl14_reg
+          input_size: 518
+          normalize_images: true
+          prenorm_features: true
+        - - - mask
+            - cropped   # 裁切后的图像
+          - - rgb_image_mask  
+            - full  # 原始图像
+      projection_net_hidden_dim_multiplier: 4.0
+      use_pos_embedding: learned
+  generator:
+    backbone:
+    # FlowMatching 模型
+      _target_: sam3d_objects.model.backbone.generator.flow_matching.model.FlowMatching
+      # _target_: sam3d_objects.model.backbone.generator.flow_matching.model.FlowMatching_EasyCache
+      # _target_: sam3d_objects.model.backbone.generator.flow_matching.model.FlowMatching_taylorseer
+      # _target_: sam3d_objects.model.backbone.generator.flow_matching.model.FlowMatching_f3c
+      # _target_: sam3d_objects.model.backbone.generator.flow_matching.model.FlowMatching_token
+      
+      # _target_: sam3d_objects.model.backbone.generator.flow_matching.model.FlowMatching_end
+     
+      inference_steps: 12 # 步数12
+      reverse_fn:
+      # Flow Matching 中预测速度场的具体网络
+        _target_: sam3d_objects.model.backbone.generator.classifier_free_guidance.ClassifierFreeGuidance
+        backbone:
+          _target_: sam3d_objects.model.backbone.tdfy_dit.models.structured_latent_flow.SLatFlowModelTdfyWrapper
+          cond_channels: 1024
+          condition_embedder: null
+          force_zeros_cond: true
+          in_channels: 8
+          io_block_channels:
+          - 128
+          mlp_ratio: 4
+          model_channels: 1024 # 隐藏层维度
+          num_blocks: 24 # 24层transformer
+          num_heads: 16
+          num_io_res_blocks: 2
+          out_channels: 8
+          patch_size: 2 # 64x64 的潜变量切成 2x2 的 patch
+          pe_mode: ape  # 绝对位置编码
+          qk_rms_norm: true
+          resolution: 64 # 潜空间分辨率
+          use_fp16: true
+        p_unconditional: 0.0
+        strength: 0.0
+        unconditional_handling: add_flag
+      sigma_min: 0.0
+      time_scale: 1000.0
+      training_time_sampler_fn:
+        _partial_: true
+        _target_: sam3d_objects.model.backbone.generator.flow_matching.model.lognorm_sampler
+        mean: -1.0
+        std: 1.0
