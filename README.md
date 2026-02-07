@@ -121,6 +121,8 @@ The Mesh Decoder processes dense token sequences. We introduce:
 
 ### Setup FastSAM3D Environment
 
+If you already have the official SAM3D environment, you can directly reuse it,below is the official environment configuration for SAM3D.
+
 ```
 # create fastsam3d environment
 mamba env create -f environments/default.yml
@@ -141,7 +143,7 @@ pip install -e '.[inference]'
 ./patching/hydra # https://github.com/facebookresearch/hydra/pull/2863
 ```
 
-If you encounter difficulties during installation, please refer to the more detailed [/doc/Setup.md](https://github.com/wlfeng0509/Fast-SAM3D/blob/main/doc/Setup.md) documentation.
+If you encounter some difficulties during installation, please refer to the more detailed [/doc/Setup.md](https://github.com/wlfeng0509/Fast-SAM3D/blob/main/doc/Setup.md) documentation.
 
 ### Getting Checkpoints
 
@@ -233,7 +235,7 @@ python infer_scene.py \
 ```
 ├── example/
 │   ├── image.png
-│   ├── 0.png
+│   ├── 0.png  #RGB_mask
 │   └── 1.png
 ```
 
